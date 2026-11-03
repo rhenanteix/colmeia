@@ -1,0 +1,17 @@
+{
+  "name": "@colmeia/database",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "prisma:generate": "cd ../.. && prisma generate --schema=packages/database/prisma/schema.prisma",
+    "prisma:migrate": "cd ../.. && prisma migrate dev --schema=packages/database/prisma/schema.prisma",
+    "build": "npm run prisma:generate",
+    "prisma:deploy": "cd ../.. && prisma migrate deploy --schema=packages/database/prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0"
+  },
+  "devDependencies": {
+    "prisma": "^5.22.0"
+  }
+}

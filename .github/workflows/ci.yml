@@ -1,0 +1,67 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: colmeia
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: colmeia
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U colmeia" --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      REDIS_URL: redis://localhost:6379
+      DATABASE_URL: postgresql://colmeia:ci_password@localhost:5432/colmeia
+      AUTH_JWT_SECRET: ci_secret_with_at_least_32_characters_change_me
+      WEB_ORIGIN: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Validate Prisma schema
+        run: npm run db:validate
+      - name: Check Prettier
+        run: npm run format:check
+      - name: Generate Prisma client
+        run: npm run db:generate
+      - name: ESLint
+        run: npm run lint
+      - name: Check TypeScript
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Test
+        run: npm test
+      - name: PostgreSQL integration
+        run: npm run test:integration
+      - name: Runtime adapter contracts (local fixture)
+        run: npm run test:runtime
+      - name: Redis and runtime worker
+        run: npm run test:queue
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: End-to-end and accessibility
+        run: npm run test:e2e
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-evidence
+          path: test-results/
+          retention-days: 7

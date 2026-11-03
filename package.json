@@ -1,0 +1,56 @@
+{
+  "name": "colmeia",
+  "private": true,
+  "version": "0.8.0",
+  "packageManager": "npm@10.9.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @colmeia/api",
+    "dev:web": "npm run dev -w @colmeia/web",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "eslint apps packages",
+    "test": "npm run test:legacy && npm run test:unit",
+    "db:generate": "npm run prisma:generate -w @colmeia/database",
+    "db:migrate": "npm run prisma:migrate -w @colmeia/database",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev": "npm run dev:web",
+    "db:deploy": "npm run prisma:deploy -w @colmeia/database",
+    "verify": "npm run test && npm run typecheck && npm run build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:validate": "prisma validate --schema=packages/database/prisma/schema.prisma",
+    "db:format": "prisma format --schema=packages/database/prisma/schema.prisma",
+    "check": "npm run db:validate && npm run format:check && npm run lint && npm run typecheck && npm test && npm run build",
+    "test:integration": "node scripts/test-integration.mjs",
+    "test:e2e": "node scripts/test-e2e.mjs",
+    "db:seed": "node --env-file=.env packages/database/prisma/seed.mjs",
+    "test:legacy": "node --test tests/*.test.mjs",
+    "test:unit": "npm run build -w @colmeia/api && vitest run",
+    "dev:worker": "npm run start -w @colmeia/worker",
+    "test:runtime": "node scripts/test-runtime-integration.mjs",
+    "test:e2e:runtime": "node scripts/test-runtime-e2e.mjs",
+    "test:openclaw": "node scripts/test-openclaw.mjs",
+    "test:live": "node scripts/test-live.mjs",
+    "test:queue": "npm run build -w @colmeia/worker && node scripts/test-queue.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
+    "eslint": "^10.14.0",
+    "prettier": "^3.4.2",
+    "supertest": "^7.3.1",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "overrides": {
+    "minimatch": "^11.0.1"
+  }
+}

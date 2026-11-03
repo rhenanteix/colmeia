@@ -1,0 +1,721 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum AgentStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum ExecutionStatus {
+  QUEUED
+  RUNNING
+  WAITING_APPROVAL
+  COMPLETED
+  FAILED
+  CANCELLED
+  TIMED_OUT
+}
+
+enum RuntimeStatus {
+  REQUESTED
+  PROVISIONING
+  READY
+  FAILED
+  SUSPENDED
+  DESTROYED
+}
+
+model User {
+  id                     String               @id @default(uuid())
+  externalSubject        String               @unique
+  email                  String               @unique
+  name                   String?
+  createdAt              DateTime             @default(now())
+  memberships            Membership[]
+  sessions               Session[]
+  passwordResetTokens    PasswordResetToken[]
+  passwordHash           String?
+  passwordResetHash      String?
+  passwordResetExpiresAt DateTime?
+}
+
+model Organization {
+  subscription Subscription?
+  subscriptionEvents SubscriptionEvent[]
+  workspaceRootId String?
+  workspaceRoot Organization? @relation("WorkspaceGroup", fields: [workspaceRootId], references: [id], onDelete: Restrict)
+  workspaces Organization[] @relation("WorkspaceGroup")
+
+  folders DocumentFolder[]
+  wikiPages WikiPage[]
+  workflows Workflow[]
+  taskBoards TaskBoard[]
+  conversations Conversation[]
+  handoffs           BeeHandoff[]
+  notifications      Notification[]
+  tasks              Task[]
+  templates          AgentTemplate[]
+  onboarding         OnboardingProgress?
+  runtimeOperations  RuntimeOperation[]
+  knowledgeDocuments KnowledgeDocument[]
+  budget             TenantBudget?
+  usageEntries       UsageLedgerEntry[]
+  approvals          ApprovalRequest[]
+  messages           Message[]
+  channels           Channel[]
+  id                 String               @id @default(uuid())
+  name               String
+  slug               String               @unique
+  createdAt          DateTime             @default(now())
+  memberships        Membership[]
+  agents             Agent[]
+  runtimes           RuntimeInstance[]
+  executions         AgentExecution[]
+  connections        ProviderConnection[]
+  auditEvents        AuditEvent[]
+  invitations        Invitation[]
+}
+
+model Membership {
+  lastSeenAt     DateTime?
+  id             String         @id @default(uuid())
+  userId         String
+  organizationId String
+  role           MembershipRole @default(MEMBER)
+  user           User           @relation(fields: [userId], references: [id])
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+model Agent {
+  documents KnowledgeDocument[]
+  wikiPages WikiPage[]
+  conversations Conversation[]
+  deployments RuntimeDeployment[]
+  handoffsSent     BeeHandoff[]       @relation("HandoffSource")
+  handoffsReceived BeeHandoff[]       @relation("HandoffTarget")
+  usageEntries     UsageLedgerEntry[]
+  approvals        ApprovalRequest[]
+  messages         Message[]
+  mascot           String             @default("exploradora")
+  updatedAt        DateTime           @default(now()) @updatedAt
+  id               String             @id @default(uuid())
+  organizationId   String
+  name             String
+  description      String?
+  status           AgentStatus        @default(DRAFT)
+  createdAt        DateTime           @default(now())
+  organization     Organization       @relation(fields: [organizationId], references: [id])
+  versions         AgentVersion[]
+  draft            AgentDraft?
+  executions       AgentExecution[]
+
+  @@unique([id, organizationId])
+  @@index([organizationId, status])
+}
+
+model AgentVersion {
+  deployments RuntimeDeployment[]
+  executions AgentExecution[]
+  createdAt     DateTime  @default(now())
+  authorSubject String?
+  id            String    @id @default(uuid())
+  agentId       String
+  version       Int
+  config        Json
+  publishedAt   DateTime?
+  agent         Agent     @relation(fields: [agentId], references: [id])
+
+  @@unique([agentId, version])
+  @@unique([id, agentId])
+}
+
+model RuntimeInstance {
+  gatewayUrl String?
+  encryptedToken String?
+  error String?
+  checkedAt DateTime?
+  updatedAt DateTime @default(now()) @updatedAt
+
+  operations        RuntimeOperation[]
+  id                String             @id @default(uuid())
+  organizationId    String
+  status            RuntimeStatus      @default(REQUESTED)
+  externalRuntimeId String?            @unique
+  createdAt         DateTime           @default(now())
+  organization      Organization       @relation(fields: [organizationId], references: [id])
+
+  @@unique([id, organizationId])
+  @@index([organizationId])
+}
+
+model ProviderConnection {
+  id              String       @id @default(uuid())
+  organizationId  String
+  provider        String
+  secretReference String
+  createdAt       DateTime     @default(now())
+  organization    Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+}
+
+model AgentExecution {
+  versionId String?
+  version AgentVersion? @relation(fields: [versionId, agentId], references: [id, agentId], onDelete: Restrict)
+  requestedBy String?
+  engine String?
+  model String?
+  provider String?
+  startedAt DateTime?
+  error String?
+  inputTokens Int @default(0)
+  outputTokens Int @default(0)
+  conversationId String?
+  conversation Conversation? @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  events ExecutionEvent[]
+  cancelRequested Boolean @default(false)
+
+  usageEntries   UsageLedgerEntry[]
+  id             String             @id @default(uuid())
+  organizationId String
+  agentId        String
+  status         ExecutionStatus    @default(QUEUED)
+  requestId      String
+  createdAt      DateTime           @default(now())
+  finishedAt     DateTime?
+  organization   Organization       @relation(fields: [organizationId], references: [id])
+  agent          Agent              @relation(fields: [agentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+
+  @@unique([id, organizationId])
+  @@unique([organizationId, requestId])
+  @@index([organizationId, status])
+}
+
+model AuditEvent {
+  id             String       @id @default(uuid())
+  organizationId String
+  actorSubject   String
+  action         String
+  resourceId     String?
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, createdAt])
+}
+
+model Channel {
+  directKey      String?
+  participantIds String[]     @default([])
+  handoffs       BeeHandoff[]
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id             String       @id @default(uuid())
+  organizationId String
+  name           String
+  createdAt      DateTime     @default(now())
+  messages       Message[]
+
+  @@unique([id, organizationId])
+  @@unique([organizationId, name])
+  @@unique([organizationId, directKey])
+  @@index([organizationId])
+}
+
+model Message {
+  parentId       String?
+  parent         Message?     @relation("Thread", fields: [parentId, channelId, organizationId], references: [id, channelId, organizationId], onDelete: Restrict)
+  replies        Message[]    @relation("Thread")
+  mentionIds     String[]     @default([])
+  agent          Agent?       @relation(fields: [agentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id             String       @id @default(uuid())
+  organizationId String
+  channelId      String
+  authorSubject  String
+  body           String
+  agentId        String?
+  createdAt      DateTime     @default(now())
+  channel        Channel      @relation(fields: [channelId, organizationId], references: [id, organizationId], onDelete: Restrict)
+
+  @@index([organizationId, channelId, createdAt])
+  @@unique([id, channelId, organizationId])
+}
+
+model ApprovalRequest {
+  approverId String?
+  taskId String?
+  task Task? @relation(fields: [taskId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  taskRevision Int?
+  targetColumnId String?
+  targetStatus String?
+  reason String?
+  decidedAt DateTime?
+
+  agent          Agent?       @relation(fields: [agentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id             String       @id @default(uuid())
+  organizationId String
+  agentId        String?
+  operation      String
+  payload        Json
+  status         String       @default("pending")
+  requestedBy    String
+  decidedBy      String?
+  expiresAt      DateTime
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, status])
+}
+
+model UsageLedgerEntry {
+  execution      AgentExecution? @relation(fields: [executionId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  agent          Agent?          @relation(fields: [agentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id             String          @id @default(uuid())
+  organizationId String
+  agentId        String?
+  executionId    String?
+  provider       String
+  inputTokens    Int             @default(0)
+  outputTokens   Int             @default(0)
+  costMicros     BigInt          @default(0)
+  createdAt      DateTime        @default(now())
+
+  @@index([organizationId, createdAt])
+}
+
+model TenantBudget {
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id                 String       @id @default(uuid())
+  organizationId     String       @unique
+  monthlyLimitMicros BigInt
+  updatedAt          DateTime     @updatedAt
+}
+
+model KnowledgeDocument {
+  ownerId String?
+  size Int @default(0)
+  mimeType String @default("application/octet-stream")
+  visibility String @default("organization")
+  folderId String?
+  folder DocumentFolder? @relation(fields: [folderId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  taskId String?
+  task Task? @relation(fields: [taskId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  agentId String?
+  agent Agent? @relation(fields: [agentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  wikiId String?
+  wiki WikiPage? @relation(fields: [wikiId, organizationId], references: [id, organizationId], onDelete: Restrict)
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id             String       @id @default(uuid())
+  organizationId String
+  name           String
+  storageKey     String
+  status         String       @default("pending")
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
+}
+
+model RuntimeOperation {
+  runtime        RuntimeInstance? @relation(fields: [runtimeId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id             String           @id @default(uuid())
+  organizationId String
+  runtimeId      String?
+  operation      String
+  status         String           @default("queued")
+  idempotencyKey String
+  error          String?
+  createdAt      DateTime         @default(now())
+
+  @@unique([organizationId, idempotencyKey])
+}
+
+model Invitation {
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String         @id @default(uuid())
+  organizationId String
+  email          String
+  role           MembershipRole @default(MEMBER)
+  tokenHash      String         @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime       @default(now())
+
+  @@index([organizationId, email])
+}
+
+model OnboardingProgress {
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organizationId String       @id
+  step           Int          @default(0)
+  context        Json?
+  completedAt    DateTime?
+  updatedAt      DateTime     @updatedAt
+}
+
+model AgentTemplate {
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organizationId String?
+  id             String        @id
+  name           String
+  category       String
+  description    String
+  config         Json
+
+  @@index([organizationId, category])
+}
+
+model Task {
+  documents KnowledgeDocument[]
+  approvals ApprovalRequest[]
+  boardId String?
+  columnId String?
+  board TaskBoard? @relation(fields: [boardId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  column TaskColumn? @relation(fields: [columnId, boardId, organizationId], references: [id, boardId, organizationId], onDelete: Restrict)
+  priority String @default("normal")
+  dueAt DateTime?
+  labels String[] @default([])
+  archivedAt DateTime?
+  revision Int @default(0)
+  position Int @default(0)
+  comments TaskComment[]
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id             String       @id @default(uuid())
+  organizationId String
+  title          String
+  description    String?
+  status         String       @default("todo")
+  assignedTo     String?
+  createdBy      String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([id, organizationId])
+  @@index([organizationId, boardId, archivedAt])
+  @@index([organizationId, status])
+}
+
+model Notification {
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id               String       @id @default(uuid())
+  organizationId   String
+  recipientSubject String
+  title            String
+  body             String?
+  readAt           DateTime?
+  createdAt        DateTime     @default(now())
+
+  @@index([organizationId, recipientSubject, createdAt])
+}
+
+model AgentDraft {
+  agent          Agent    @relation(fields: [agentId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  revision       Int      @default(0)
+  agentId        String   @id
+  organizationId String
+  config         Json
+  updatedAt      DateTime @updatedAt
+
+  @@unique([agentId, organizationId])
+  @@index([organizationId])
+}
+
+/// Team-to-agent or agent-to-agent collaboration, scoped to an organization.
+model BeeHandoff {
+  channel        Channel      @relation(fields: [channelId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  sourceAgent    Agent?       @relation("HandoffSource", fields: [sourceAgentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  targetAgent    Agent        @relation("HandoffTarget", fields: [targetAgentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id             String       @id @default(uuid())
+  organizationId String
+  channelId      String
+  sourceAgentId  String?
+  targetAgentId  String
+  requestedBy    String
+  instruction    String
+  status         String       @default("queued")
+  result         String?
+  error          String?
+  createdAt      DateTime     @default(now())
+  completedAt    DateTime?
+
+  @@index([organizationId, channelId, createdAt])
+  @@index([organizationId, status])
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model Conversation {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  agentId String
+  agent Agent @relation(fields: [agentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  title String @default("Nova conversa")
+  createdBy String
+  archivedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages ConversationMessage[]
+  executions AgentExecution[]
+  @@unique([id, organizationId])
+  @@index([organizationId, updatedAt])
+}
+model ConversationMessage {
+  id String @id @default(uuid())
+  organizationId String
+  conversationId String
+  conversation Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  role String
+  content String
+  status String @default("completed")
+  createdAt DateTime @default(now())
+  @@index([organizationId, conversationId, createdAt])
+}
+model ExecutionEvent {
+  id String @id @default(uuid())
+  organizationId String
+  executionId String
+  execution AgentExecution @relation(fields: [executionId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  sequence Int
+  type String
+  payload Json
+  createdAt DateTime @default(now())
+  @@unique([executionId, sequence])
+  @@index([organizationId, executionId, createdAt])
+}
+model RuntimeDeployment {
+  id String @id @default(uuid())
+  organizationId String
+  agentId String
+  agent Agent @relation(fields: [agentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  versionId String
+  version AgentVersion @relation(fields: [versionId, agentId], references: [id, agentId], onDelete: Restrict)
+  engine String
+  status String @default("PENDING")
+  error String?
+  createdAt DateTime @default(now())
+  @@unique([versionId])
+  @@index([organizationId, agentId, status])
+}
+
+model TaskBoard {
+  wikiPages WikiPage[]
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name String
+  createdAt DateTime @default(now())
+  columns TaskColumn[]
+  tasks Task[]
+  @@unique([id, organizationId])
+  @@index([organizationId])
+}
+model TaskColumn {
+  id String @id @default(uuid())
+  organizationId String
+  boardId String
+  board TaskBoard @relation(fields: [boardId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  name String
+  position Int
+  tasks Task[]
+  @@unique([id, boardId, organizationId])
+  @@index([organizationId, boardId])
+}
+model TaskComment {
+  id String @id @default(uuid())
+  organizationId String
+  taskId String
+  task Task @relation(fields: [taskId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  authorSubject String
+  body String
+  createdAt DateTime @default(now())
+  @@index([organizationId, taskId, createdAt])
+}
+
+model Workflow {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name String
+  draft Json
+  revision Int @default(0)
+  publishedVersion Int @default(0)
+  active Boolean @default(false)
+  webhookHash String
+  nextRunAt DateTime?
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  versions WorkflowVersion[]
+  runs WorkflowRun[]
+  @@unique([id, organizationId])
+  @@index([organizationId])
+}
+model WorkflowVersion {
+  id String @id @default(uuid())
+  workflowId String
+  organizationId String
+  workflow Workflow @relation(fields: [workflowId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  version Int
+  graph Json
+  createdAt DateTime @default(now())
+  runs WorkflowRun[]
+  @@unique([workflowId, version])
+  @@unique([id, workflowId, organizationId])
+}
+model WorkflowRun {
+  id String @id @default(uuid())
+  workflowId String
+  organizationId String
+  workflow Workflow @relation(fields: [workflowId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  versionId String
+  version WorkflowVersion @relation(fields: [versionId, workflowId, organizationId], references: [id, workflowId, organizationId], onDelete: Restrict)
+  idempotencyKey String
+  correlationId String @default(uuid())
+  requestedBy String
+  trigger String
+  status String @default("queued")
+  currentNode String
+  context Json
+  revision Int @default(0)
+  attempts Int @default(0)
+  stepAttempts Int @default(0)
+  error String?
+  availableAt DateTime @default(now())
+  approvalId String?
+  createdAt DateTime @default(now())
+  startedAt DateTime?
+  finishedAt DateTime?
+  steps WorkflowStep[]
+  @@unique([workflowId, idempotencyKey])
+  @@unique([id, organizationId])
+  @@index([status, availableAt])
+  @@index([organizationId, createdAt])
+}
+model WorkflowStep {
+  id String @id @default(uuid())
+  runId String
+  organizationId String
+  run WorkflowRun @relation(fields: [runId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  nodeId String
+  type String
+  status String
+  attempt Int
+  error String?
+  createdAt DateTime @default(now())
+  @@index([runId, createdAt])
+}
+
+model DocumentFolder {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name String
+  documents KnowledgeDocument[]
+  @@unique([id, organizationId])
+  @@index([organizationId])
+}
+model WikiPage {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  title String
+  content String
+  ownerId String
+  visibility String @default("organization")
+  revision Int @default(1)
+  parentId String?
+  parent WikiPage? @relation("WikiTree", fields: [parentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  children WikiPage[] @relation("WikiTree")
+  agentId String?
+  agent Agent? @relation(fields: [agentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  boardId String?
+  board TaskBoard? @relation(fields: [boardId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  versions WikiVersion[]
+  documents KnowledgeDocument[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([id, organizationId])
+  @@index([organizationId])
+}
+model WikiVersion {
+  id String @id @default(uuid())
+  organizationId String
+  pageId String
+  page WikiPage @relation(fields: [pageId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  revision Int
+  title String
+  content String
+  authorId String
+  createdAt DateTime @default(now())
+  @@unique([pageId, revision])
+}
+
+model Subscription {
+  organizationId String @id
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  planId String @default("free")
+  status String @default("active")
+  paymentStatus String @default("not_required")
+  mode String @default("internal")
+  trialEndsAt DateTime?
+  revision Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model SubscriptionEvent {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  idempotencyKey String
+  type String
+  payload Json
+  actorId String
+  createdAt DateTime @default(now())
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, createdAt])
+}

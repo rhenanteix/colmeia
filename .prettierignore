@@ -1,0 +1,19 @@
+node_modules
+.next
+dist
+coverage
+*.zip
+package-lock.json
+.env*
+*.png
+*.jpg
+*.jpeg
+*.mov
+*.svg
+*.md
+packages/database/prisma/migrations
+
+# Next.js regenerates this file during build.
+apps/web/next-env.d.ts
+artifacts
+test-results
